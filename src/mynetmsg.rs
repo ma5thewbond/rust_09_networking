@@ -8,39 +8,55 @@ pub struct MyNetMsg {
     pub text: String,
     pub file: Vec<u8>,
     pub file_name: String,
-    sender: Uuid,
+    pub sender: Uuid,
+    pub sender_name: String,
 }
 
 impl MyNetMsg {
-    pub fn new_text(content: String, sender: Uuid) -> MyNetMsg {
+    pub fn builder(sender_name: String) -> MyNetMsg {
+        let msg = Self {
+            msg_type: MyMsgType::Text,
+            text: String::new(),
+            file: Vec::new(),
+            file_name: String::new(),
+            sender: Uuid::new_v4(),
+            sender_name: sender_name,
+        };
+        return msg;
+    }
+
+    pub fn new_text(&self, content: String) -> MyNetMsg {
         let msg = Self {
             msg_type: MyMsgType::Text,
             text: content,
             file: Vec::new(),
             file_name: String::new(),
-            sender: sender,
+            sender: self.sender,
+            sender_name: self.sender_name.clone(),
         };
         return msg;
     }
 
-    pub fn new_file(file_name: String, content: Vec<u8>, sender: Uuid) -> MyNetMsg {
+    pub fn new_file(&self, file_name: String, content: Vec<u8>) -> MyNetMsg {
         let msg = Self {
             msg_type: MyMsgType::File,
             text: String::new(),
             file: content,
             file_name: file_name,
-            sender: sender,
+            sender: self.sender,
+            sender_name: self.sender_name.clone(),
         };
         return msg;
     }
 
-    pub fn new_image(file_name: String, content: Vec<u8>, sender: Uuid) -> MyNetMsg {
+    pub fn new_image(&self, file_name: String, content: Vec<u8>) -> MyNetMsg {
         let msg = Self {
             msg_type: MyMsgType::Image,
             text: String::new(),
             file: content,
             file_name: file_name,
-            sender: sender,
+            sender: self.sender,
+            sender_name: self.sender_name.clone(),
         };
         return msg;
     }
@@ -51,7 +67,8 @@ impl MyNetMsg {
             text: String::new(),
             file: Vec::new(),
             file_name: String::new(),
-            sender: self.sender.clone(),
+            sender: self.sender,
+            sender_name: self.sender_name.clone(),
         };
         return msg;
     }

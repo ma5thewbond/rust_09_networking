@@ -1,12 +1,15 @@
 use lib::mynetmsg::MyNetMsg;
 use lib::serialize_msg;
 use std::{io::Write, net::TcpStream};
-use uuid::Uuid;
 
 fn main() {
-    let client_id = Uuid::new_v4();
+    println!("Type your name:");
+    let mut user_name = String::new();
+    std::io::stdin().read_line(&mut user_name).unwrap();
+    user_name = user_name.trim().into();
+    let message_builder = MyNetMsg::builder(user_name);
     let stream = TcpStream::connect("127.0.0.1:11111").expect("Cannot connect");
-    while send_custom_message(&stream, client_id) {}
+    while send_custom_message(&stream, &message_builder) {}
     println!("Bye from client");
     // send_message("Hello from client\n", &stream);
     // send_message("One more\n", &stream);
@@ -22,12 +25,13 @@ fn main() {
 //     println!("Message sent");
 // }
 
-fn send_custom_message(mut stream: &TcpStream, client_id: Uuid) -> bool {
+fn send_custom_message(mut stream: &TcpStream, mb: &MyNetMsg) -> bool {
     println!("Type message for the server");
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
+    input = input.trim().into();
     let exit = !input.starts_with(".quit");
-    let msg = MyNetMsg::new_text(input, client_id);
+    let msg = mb.new_text(input);
     let ser_msg = serialize_msg(msg).unwrap();
     let len = ser_msg.len() as u32;
     stream.write(&len.to_be_bytes()).unwrap();
