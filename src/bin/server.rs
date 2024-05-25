@@ -1,14 +1,14 @@
-use lib::deserialize_msg;
+use flume::{Receiver, Sender};
+use lib::{deserialize_msg, mynetmsg::MyNetMsg, send_message};
 //use lib::mynetmsg::MyNetMsg;
 use std::{
     collections::HashMap,
     error::Error,
-    io::{self, Read},
+    io::Read,
     net::{SocketAddr, TcpListener, TcpStream},
     str::FromStr,
-    sync::Mutex,
-    thread::{self, JoinHandle},
-    time::Duration,
+    sync::{Arc, Mutex, RwLock},
+    thread,
 };
 
 trait Substr {
@@ -34,7 +34,12 @@ fn main() {
     let server = TcpListener::bind("0.0.0.0:11111").unwrap();
     //*LOCAL_ADDRESS.lock().unwrap() = server.local_addr().unwrap();
 
-    let mut clients: HashMap<SocketAddr, TcpStream> = HashMap::new();
+    let clients: Arc<RwLock<HashMap<SocketAddr, TcpStream>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    let clients2 = Arc::clone(&clients);
+    let (send_msg, rcv_msg) = flume::unbounded::<MyNetMsg>();
+    let thandle = thread::spawn(move || send_to_all(rcv_msg, &clients2));
+
     for stream in server.incoming() {
         let client_count = *CLIENT_COUNTER.lock().unwrap();
         if !waiting && client_count == 0 {
@@ -44,22 +49,33 @@ fn main() {
         *CLIENT_COUNTER.lock().unwrap() += 1;
         let stream = stream.unwrap();
         let addr = stream.peer_addr().unwrap();
-        clients.insert(addr, stream);
-        println!("-- Client connected, number of clients: {}", clients.len());
-        let strm = clients.get(&addr).unwrap().try_clone().unwrap();
+        clients.write().unwrap().insert(addr, stream);
+        println!(
+            "-- Client connected, number of clients: {}",
+            clients.read().unwrap().len()
+        );
+        let strm = clients
+            .read()
+            .unwrap()
+            .get(&addr)
+            .unwrap()
+            .try_clone()
+            .unwrap();
 
         //handle_client(strm, addr).unwrap();
-        let _ = thread::spawn(move || handle_client(strm, addr));
+        let send_msg_cln = send_msg.clone();
+        let _ = thread::spawn(move || handle_client(strm, addr, send_msg_cln));
         // clients.remove(&addr);
         // println!("Client disconnected, number of clients: {}", clients.len());
     }
-
+    thandle.join().unwrap();
     println!("-- 0 clients left, shutting down server.");
 }
 
 fn handle_client(
     mut stream: TcpStream,
     addr: SocketAddr,
+    send_msg: Sender<MyNetMsg>,
 ) -> Result<SocketAddr, Box<dyn Error + Send>> {
     loop {
         let mut len_b: [u8; 4] = [0u8; 4];
@@ -82,15 +98,32 @@ fn handle_client(
         let msg = deserialize_msg(buffer).unwrap();
         if msg.text.trim() == ".quit" {
             println!("-- {} disconnected", msg.sender_name);
+            *CLIENT_COUNTER.try_lock().unwrap() -= 1;
+            let count = *CLIENT_COUNTER.try_lock().unwrap();
+
+            if count == 0 {
+                TcpStream::connect(*LOCAL_ADDRESS.try_lock().unwrap()).unwrap();
+                send_msg.send(msg).unwrap();
+            }
             break;
         } else {
             println!("{}: {}", msg.sender_name, msg.text);
+            send_msg.send(msg).unwrap();
         }
     }
-
-    *CLIENT_COUNTER.try_lock().unwrap() -= 1;
-    if *CLIENT_COUNTER.try_lock().unwrap() == 0 {
-        TcpStream::connect(*LOCAL_ADDRESS.try_lock().unwrap()).unwrap();
-    }
     return Ok(addr);
+}
+
+fn send_to_all(rcv_msg: Receiver<MyNetMsg>, clients: &Arc<RwLock<HashMap<SocketAddr, TcpStream>>>) {
+    loop {
+        let msg = rcv_msg.recv().unwrap(); // wait for the command from the input thread
+        if msg.text == ".quit" {
+            break;
+        }
+
+        let cl = Arc::clone(&clients);
+        for (_, stream) in cl.read().unwrap().iter() {
+            send_message(&stream, msg.clone());
+        }
+    }
 }

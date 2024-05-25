@@ -2,7 +2,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::error::Error;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MyNetMsg {
     pub msg_type: MyMsgType,
     pub text: String,
@@ -90,7 +90,7 @@ impl MyNetMsg {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum MyMsgType {
     Text,
     File,
