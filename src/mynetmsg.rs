@@ -61,6 +61,18 @@ impl MyNetMsg {
         return msg;
     }
 
+    pub fn quit_msq(content: String) -> MyNetMsg {
+        let msg = Self {
+            msg_type: MyMsgType::Text,
+            text: content,
+            file: Vec::new(),
+            file_name: String::new(),
+            sender: Uuid::new_v4(),
+            sender_name: String::new(),
+        };
+        return msg;
+    }
+
     fn new_incomming(&self, msg_type: MyMsgType) -> MyNetMsg {
         let msg = Self {
             msg_type: msg_type,

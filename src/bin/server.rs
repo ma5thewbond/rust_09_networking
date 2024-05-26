@@ -27,11 +27,12 @@ static CLIENT_COUNTER: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
 // because of the port selection
 static LOCAL_ADDRESS: Lazy<Mutex<SocketAddr>> =
     Lazy::new(|| Mutex::new(SocketAddr::from_str("127.0.0.1:11111").unwrap()));
+
 fn main() {
     *CLIENT_COUNTER.lock().unwrap() = 0;
     let mut waiting = true;
     println!("-- MyNetMsg::Chat server started, awaiting connections");
-    let server = TcpListener::bind("0.0.0.0:11111").unwrap();
+    let server_read = TcpListener::bind("0.0.0.0:11111").unwrap();
     //*LOCAL_ADDRESS.lock().unwrap() = server.local_addr().unwrap();
 
     let clients: Arc<RwLock<HashMap<SocketAddr, TcpStream>>> =
@@ -40,7 +41,7 @@ fn main() {
     let (send_msg, rcv_msg) = flume::unbounded::<MyNetMsg>();
     let thandle = thread::spawn(move || send_to_all(rcv_msg, &clients2));
 
-    for stream in server.incoming() {
+    for stream in server_read.incoming() {
         let client_count = *CLIENT_COUNTER.lock().unwrap();
         if !waiting && client_count == 0 {
             break;
@@ -78,14 +79,16 @@ fn handle_client(
     send_msg: Sender<MyNetMsg>,
 ) -> Result<SocketAddr, Box<dyn Error + Send>> {
     loop {
+        println!("Reading incomming message");
         let mut len_b: [u8; 4] = [0u8; 4];
         let res = stream.read_exact(&mut len_b);
+        println!("Message red");
         match res {
             Err(error) => {
                 eprintln!("-- Client disconnected ({error})");
                 *CLIENT_COUNTER.try_lock().unwrap() -= 1;
                 if *CLIENT_COUNTER.try_lock().unwrap() == 0 {
-                    TcpStream::connect(*LOCAL_ADDRESS.try_lock().unwrap()).unwrap();
+                    send_quit_ping(send_msg);
                 }
                 return Ok(addr);
             }
@@ -102,8 +105,7 @@ fn handle_client(
             let count = *CLIENT_COUNTER.try_lock().unwrap();
 
             if count == 0 {
-                TcpStream::connect(*LOCAL_ADDRESS.try_lock().unwrap()).unwrap();
-                send_msg.send(msg).unwrap();
+                send_quit_ping(send_msg);
             }
             break;
         } else {
@@ -126,4 +128,11 @@ fn send_to_all(rcv_msg: Receiver<MyNetMsg>, clients: &Arc<RwLock<HashMap<SocketA
             send_message(&stream, msg.clone());
         }
     }
+}
+
+fn send_quit_ping(send_msg: Sender<MyNetMsg>) {
+    TcpStream::connect(*LOCAL_ADDRESS.try_lock().unwrap()).unwrap();
+    send_msg
+        .send(MyNetMsg::quit_msq(String::from(".quit")))
+        .unwrap();
 }
