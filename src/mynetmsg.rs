@@ -1,5 +1,10 @@
 use serde_derive::{Deserialize, Serialize};
 use std::error::Error;
+use std::fs;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::path::Path;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -25,7 +30,7 @@ impl MyNetMsg {
         return msg;
     }
 
-    pub fn new_text(&self, content: String) -> MyNetMsg {
+    pub fn new_text(&self, content: String) -> Result<MyNetMsg, Box<dyn Error>> {
         let msg = Self {
             msg_type: MyMsgType::Text,
             text: content,
@@ -34,31 +39,31 @@ impl MyNetMsg {
             sender: self.sender,
             sender_name: self.sender_name.clone(),
         };
-        return msg;
+        return Ok(msg);
     }
 
-    pub fn new_file(&self, file_name: String, content: Vec<u8>) -> MyNetMsg {
+    pub fn new_file(&self, path: String) -> Result<MyNetMsg, Box<dyn Error>> {
         let msg = Self {
             msg_type: MyMsgType::File,
             text: String::new(),
-            file: content,
-            file_name: file_name,
+            file: Self::get_file_data(&path)?,
+            file_name: Self::get_file_name(&path),
             sender: self.sender,
             sender_name: self.sender_name.clone(),
         };
-        return msg;
+        return Ok(msg);
     }
 
-    pub fn new_image(&self, file_name: String, content: Vec<u8>) -> MyNetMsg {
+    pub fn new_image(&self, path: String) -> Result<MyNetMsg, Box<dyn Error>> {
         let msg = Self {
             msg_type: MyMsgType::Image,
             text: String::new(),
-            file: content,
-            file_name: file_name,
+            file: Self::get_file_data(&path)?,
+            file_name: Self::get_file_name(&path).to_string(),
             sender: self.sender,
             sender_name: self.sender_name.clone(),
         };
-        return msg;
+        return Ok(msg);
     }
 
     pub fn quit_msq(content: String) -> MyNetMsg {
@@ -73,32 +78,37 @@ impl MyNetMsg {
         return msg;
     }
 
-    fn new_incomming(&self, msg_type: MyMsgType) -> MyNetMsg {
-        let msg = Self {
-            msg_type: msg_type,
-            text: String::new(),
-            file: Vec::new(),
-            file_name: String::new(),
-            sender: self.sender,
-            sender_name: self.sender_name.clone(),
-        };
-        return msg;
+    pub fn store_file(&self, path: &Path) -> Result<(), Box<dyn Error>> {
+        if !Path::new("images").exists() {
+            fs::create_dir("images")?;
+        }
+        if !Path::new("files").exists() {
+            fs::create_dir("files")?;
+        }
+        let mut f = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .read(true)
+            .open(path.join(&self.file_name))?;
+
+        f.write(&self.file)?;
+
+        return Ok(());
     }
 
-    pub fn get_incomming(&self) -> Result<MyNetMsg, Box<dyn Error>> {
-        match self.msg_type {
-            MyMsgType::File => {
-                let inc = MyNetMsg::new_incomming(self, MyMsgType::IncomingFile);
-                return Ok(inc);
-            }
-            MyMsgType::Image => {
-                let inc = MyNetMsg::new_incomming(self, MyMsgType::IncomingImage);
-                return Ok(inc);
-            }
-            _ => {
-                return Err("Type of message doesn't have incomming variant".into());
-            }
-        }
+    fn get_file_name(path: &str) -> String {
+        let path: &Path = Path::new(path.trim());
+        return path.file_name().unwrap().to_str().unwrap().to_string();
+    }
+
+    fn get_file_data(path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+        let path = Path::new(path.trim());
+        let mut f = File::open(path)?;
+        let metadata = fs::metadata(path)?;
+        let mut buffer = vec![0; metadata.len() as usize];
+        f.read(&mut buffer)?;
+
+        return Ok(buffer);
     }
 }
 
@@ -107,6 +117,4 @@ pub enum MyMsgType {
     Text,
     File,
     Image,
-    IncomingFile,
-    IncomingImage,
 }

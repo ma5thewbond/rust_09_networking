@@ -1,10 +1,12 @@
 use flume::{Receiver, Sender};
-use lib::{deserialize_msg, mynetmsg::MyNetMsg, send_message};
-//use lib::mynetmsg::MyNetMsg;
+use lib::{
+    mynetmsg::{MyMsgType, MyNetMsg},
+    read_message, send_message,
+};
 use std::{
     collections::HashMap,
+    env,
     error::Error,
-    io::Read,
     net::{SocketAddr, TcpListener, TcpStream},
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
@@ -29,10 +31,16 @@ static LOCAL_ADDRESS: Lazy<Mutex<SocketAddr>> =
     Lazy::new(|| Mutex::new(SocketAddr::from_str("127.0.0.1:11111").unwrap()));
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    let address = if args.len() < 2 {
+        String::from("0.0.0.0:11111")
+    } else {
+        String::from(format!("0.0.0.0:{}", args[1]))
+    };
     *CLIENT_COUNTER.lock().unwrap() = 0;
     let mut waiting = true;
     println!("-- MyNetMsg::Chat server started, awaiting connections");
-    let server_read = TcpListener::bind("0.0.0.0:11111").unwrap();
+    let server_read = TcpListener::bind(address).unwrap();
     //*LOCAL_ADDRESS.lock().unwrap() = server.local_addr().unwrap();
 
     let clients: Arc<RwLock<HashMap<SocketAddr, TcpStream>>> =
@@ -79,38 +87,42 @@ fn handle_client(
     send_msg: Sender<MyNetMsg>,
 ) -> Result<SocketAddr, Box<dyn Error + Send>> {
     loop {
-        println!("Reading incomming message");
-        let mut len_b: [u8; 4] = [0u8; 4];
-        let res = stream.read_exact(&mut len_b);
-        println!("Message red");
-        match res {
+        let msg = read_message(&mut stream);
+        match msg {
+            Ok(message) => {
+                if message.text.trim() == ".quit" {
+                    println!("-- {} disconnected", message.sender_name);
+                    *CLIENT_COUNTER.try_lock().unwrap() -= 1;
+                    let count = *CLIENT_COUNTER.try_lock().unwrap();
+
+                    if count == 0 {
+                        send_quit_ping(send_msg);
+                    }
+                    break;
+                } else {
+                    match message.msg_type {
+                        MyMsgType::Text => {
+                            println!("{}: {}", message.sender_name, message.text)
+                        }
+                        MyMsgType::File => {
+                            println!("{}: {}", message.sender_name, message.file_name)
+                        }
+                        MyMsgType::Image => {
+                            println!("{}: {}", message.sender_name, message.file_name)
+                        }
+                    }
+
+                    send_msg.send(message).unwrap();
+                }
+            }
             Err(error) => {
-                eprintln!("-- Client disconnected ({error})");
+                eprintln!("Error reading message: {error}");
                 *CLIENT_COUNTER.try_lock().unwrap() -= 1;
                 if *CLIENT_COUNTER.try_lock().unwrap() == 0 {
                     send_quit_ping(send_msg);
+                    break;
                 }
-                return Ok(addr);
             }
-            _ => {}
-        }
-        let len: usize = u32::from_be_bytes(len_b) as usize;
-        //println!("Size of the incomming message is: {len}");
-        let mut buffer: Vec<u8> = vec![0u8; len];
-        stream.read_exact(&mut buffer).unwrap();
-        let msg = deserialize_msg(buffer).unwrap();
-        if msg.text.trim() == ".quit" {
-            println!("-- {} disconnected", msg.sender_name);
-            *CLIENT_COUNTER.try_lock().unwrap() -= 1;
-            let count = *CLIENT_COUNTER.try_lock().unwrap();
-
-            if count == 0 {
-                send_quit_ping(send_msg);
-            }
-            break;
-        } else {
-            println!("{}: {}", msg.sender_name, msg.text);
-            send_msg.send(msg).unwrap();
         }
     }
     return Ok(addr);
@@ -125,7 +137,9 @@ fn send_to_all(rcv_msg: Receiver<MyNetMsg>, clients: &Arc<RwLock<HashMap<SocketA
 
         let cl = Arc::clone(&clients);
         for (_, stream) in cl.read().unwrap().iter() {
-            send_message(&stream, msg.clone());
+            send_message(&stream, msg.clone()).unwrap_or_else(|error| {
+                eprintln!("Sending message failed with error: {error}");
+            });
         }
     }
 }
