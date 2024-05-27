@@ -38,7 +38,7 @@ fn main() {
 }
 
 fn handle_custom_message(stream: &TcpStream, mb: &MyNetMsg) -> bool {
-    print!("#> ");
+    print!(": ");
     io::stdout()
         .flush()
         .unwrap_or_else(|error| eprintln!("flush error: {error}"));
@@ -69,51 +69,51 @@ fn handle_received_messages(
     loop {
         let msg = read_message(&mut stream);
         match msg {
-            Ok(message) => match message.msg_type {
-                MyMsgType::Text => {
-                    if message.text.trim() == ".quit" {
-                        println!("\n-- {} disconnected", message.sender_name);
-                        break;
-                    } else if message.sender != *sender {
-                        println!("\n{}: {}", message.sender_name, message.text);
-                    }
+            Ok(message) => {
+                if message.sender != *sender {
+                    match message.msg_type {
+                        MyMsgType::Text => {
+                            if message.text.trim() == ".quit" {
+                                println!("\n-- {} disconnected", message.sender_name);
+                                break;
+                            } else {
+                                println!("\n{}: {}", message.sender_name, message.text);
+                            }
+                        }
+                        MyMsgType::File => {
+                            println!(
+                                "\n{}: incomming file {}",
+                                message.sender_name, message.file_name
+                            );
+                            message
+                                .store_file(&Path::new(".\\files"))
+                                .unwrap_or_else(|error| {
+                                    eprintln!("Saving file failed with error: {error}");
+                                });
+                        }
+                        MyMsgType::Image => {
+                            println!(
+                                "\n{}: incomming image {}",
+                                message.sender_name, message.file_name
+                            );
+                            message
+                                .store_file(&Path::new(".\\images"))
+                                .unwrap_or_else(|error| {
+                                    eprintln!("Saving image failed with error: {error}");
+                                });
+                        }
+                    };
+                    print!(": ");
+                    io::stdout()
+                        .flush()
+                        .unwrap_or_else(|error| eprintln!("flush error: {error}"));
                 }
-                MyMsgType::File => {
-                    if message.sender != *sender {
-                        println!(
-                            "\n{}: incomming file {}",
-                            message.sender_name, message.file_name
-                        );
-                        message
-                            .store_file(&Path::new(".\\files"))
-                            .unwrap_or_else(|error| {
-                                eprintln!("Saving file failed with error: {error}");
-                            });
-                    }
-                }
-                MyMsgType::Image => {
-                    if message.sender != *sender {
-                        println!(
-                            "\n{}: incomming image {}",
-                            message.sender_name, message.file_name
-                        );
-                        message
-                            .store_file(&Path::new(".\\images"))
-                            .unwrap_or_else(|error| {
-                                eprintln!("Saving image failed with error: {error}");
-                            });
-                    }
-                }
-            },
+            }
             Err(error) => {
                 eprintln!("Error reading message: {error}");
                 break;
             }
         }
-        print!("#> ");
-        io::stdout()
-            .flush()
-            .unwrap_or_else(|error| eprintln!("flush error: {error}"));
         // else {
         //     println!("me: {}", msg.text);
         // }

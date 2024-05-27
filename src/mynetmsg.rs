@@ -92,7 +92,7 @@ impl MyNetMsg {
             .open(path.join(&self.file_name))?;
 
         f.write(&self.file)?;
-
+        println!("File {} was saved to {path:?}", &self.file_name);
         return Ok(());
     }
 
