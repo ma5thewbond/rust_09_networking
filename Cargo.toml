@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 flume = "0.11.0"
+image = "0.25.1"
 once_cell = "1.19.0"
 serde = "1.0.202"
 serde_cbor = "0.11.2"
@@ -21,19 +22,3 @@ features = [
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
     "serde"
 ]
-
-[[client]]
-name = "client"
-path = "bin/client.rs"
-
-[[server]]
-name = "server"
-path = "bin/client.rs"
-
-[lib]
-name = "lib"
-path = "src/lib.rs"
-
-[mynetmsg]
-name = "mynetmsg"
-path = "src/mynetmsg.rs"

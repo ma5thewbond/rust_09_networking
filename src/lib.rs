@@ -4,6 +4,8 @@ use std::io::Read;
 use std::{error::Error, io::Write, net::TcpStream};
 
 pub mod mynetmsg;
+pub mod mynetmsgclient;
+pub mod mynetmsgserver;
 
 pub fn serialize_msg(msg: mynetmsg::MyNetMsg) -> Result<Vec<u8>, Box<dyn Error>> {
     return Ok(serde_cbor::to_vec(&msg)?);
@@ -38,3 +40,32 @@ pub fn read_message(mut stream: &TcpStream) -> Result<MyNetMsg, Box<dyn Error>> 
     let msg = deserialize_msg(buffer);
     return msg;
 }
+
+pub fn read_trim_input(prompt: &str) -> Qresult<String> {
+    if prompt.len() > 0 {
+        println!("{prompt}");
+    }
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    return Ok(input.trim().into());
+}
+
+pub fn prompt() {
+    print!(": ");
+    std::io::stdout()
+        .flush()
+        .unwrap_or_else(|error| eprintln!("flush error: {error}"));
+}
+
+trait Substr {
+    fn substring(&self, from: usize, len: usize) -> String;
+}
+
+impl Substr for String {
+    fn substring(&self, from: usize, len: usize) -> String {
+        return self.chars().skip(from).take(len).collect();
+    }
+}
+
+pub type Qresult<T> = Result<T, Box<dyn Error>>;
+pub type Qsendresult<T> = Result<T, Box<dyn Error + Send>>;

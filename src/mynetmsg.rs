@@ -1,3 +1,4 @@
+//use image::io::Reader as ImageReader;
 use serde_derive::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -85,6 +86,13 @@ impl MyNetMsg {
         if !Path::new("files").exists() {
             fs::create_dir("files")?;
         }
+        // if Path::new(&self.file_name)
+        //     .extension()
+        //     .and_then(OsStr::to_str)
+        //     != Some("jpg")
+        // {
+        //     self.convert_to_png()?;
+        // }
         let mut f = OpenOptions::new()
             .create(true)
             .write(true)
@@ -94,6 +102,18 @@ impl MyNetMsg {
         f.write(&self.file)?;
         println!("File {} was saved to {path:?}", &self.file_name);
         return Ok(());
+    }
+
+    pub fn display(&self) {
+        match &self.msg_type {
+            MyMsgType::Text => println!("\n{}: {}", self.sender_name, self.text),
+            MyMsgType::File => {
+                println!("\n{}: incomming file {}", self.sender_name, self.file_name)
+            }
+            MyMsgType::Image => {
+                println!("\n{}: incomming image {}", self.sender_name, self.file_name)
+            }
+        }
     }
 
     fn get_file_name(path: &str) -> String {
@@ -110,6 +130,14 @@ impl MyNetMsg {
 
         return Ok(buffer);
     }
+
+    // fn convert_to_png(&self) -> Result<(), Box<dyn Error>> {
+    //     // let img = ImageReader::new(Cursor::new(&self.file))
+    //     //     .with_guessed_format()?
+    //     //     .decode()?;
+    //     // img.write_to(&mut Cursor::new(&self.file), image::ImageFormat::Png)?;
+    //     return Ok(());
+    // }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
