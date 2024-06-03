@@ -105,7 +105,7 @@ impl MyNetMsgClientContext {
                 Ok(message) => {
                     if message.text.trim() == ".quit" {
                         println!("-- {} disconnected", message.sender_name);
-
+                        self.clients.write().unwrap().remove(&addr);
                         if self.clients.read().unwrap().len() == 0 {
                             self.send_quit_ping(send_msg);
                         }
