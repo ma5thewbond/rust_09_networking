@@ -13,6 +13,7 @@ use crate::{mynetmsg::MyNetMsg, read_message, send_message, Qresult, Qsendresult
 pub struct MyNetMsgServer {
     clients: Arc<RwLock<HashMap<SocketAddr, TcpStream>>>,
     port: String,
+    msg_builder: MyNetMsg,
 }
 
 impl MyNetMsgServer {
@@ -20,6 +21,7 @@ impl MyNetMsgServer {
         let server = Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
             port: port,
+            msg_builder: MyNetMsg::builder("Server".into()),
         };
         Ok(server)
     }
@@ -29,7 +31,7 @@ impl MyNetMsgServer {
         println!("-- MyNetMsg::Chat server started, awaiting connections");
         let server_read = TcpListener::bind(format!("0.0.0.0:{}", self.port))?;
         let clients2 = Arc::clone(&self.clients);
-        let (send_msg, rcv_msg) = flume::unbounded::<(SocketAddr, MyNetMsg)>();
+        let (send_msg, rcv_msg) = flume::unbounded::<(Option<SocketAddr>, MyNetMsg)>();
         let thandle = thread::spawn(move || send_to_all(rcv_msg, &clients2));
 
         for stream in server_read.incoming() {
@@ -46,6 +48,7 @@ impl MyNetMsgServer {
                 clients: tclients,
                 port: self.port.clone(),
                 stream: stream.unwrap(),
+                msg_builder: self.msg_builder.clone(),
             };
             let _ = thread::spawn(move || cc.handle_client(send_msg_cln));
         }
@@ -57,7 +60,7 @@ impl MyNetMsgServer {
 }
 
 fn send_to_all(
-    rcv_msg: Receiver<(SocketAddr, MyNetMsg)>,
+    rcv_msg: Receiver<(Option<SocketAddr>, MyNetMsg)>,
     clients: &Arc<RwLock<HashMap<SocketAddr, TcpStream>>>,
 ) {
     loop {
@@ -67,8 +70,11 @@ fn send_to_all(
         }
 
         let cl = Arc::clone(&clients);
-        for (_, stream) in cl.read().unwrap().iter() {
-            if stream.peer_addr().unwrap() == addr {
+
+        for (cl_addr, stream) in cl.read().unwrap().iter() {
+            // if addr is provided, do not send message back to sender, otherwise it is server status message to everyone
+            if addr.is_some() && *cl_addr == addr.unwrap() {
+                // stream.peer_addr().unwrap()
                 continue;
             }
             send_message(&stream, msg.clone()).unwrap_or_else(|error| {
@@ -82,12 +88,13 @@ struct MyNetMsgClientContext {
     port: String,
     clients: Arc<RwLock<HashMap<SocketAddr, TcpStream>>>,
     stream: TcpStream,
+    msg_builder: MyNetMsg,
 }
 
 impl MyNetMsgClientContext {
     pub fn handle_client(
         &self,
-        send_msg: Sender<(SocketAddr, MyNetMsg)>,
+        send_msg: Sender<(Option<SocketAddr>, MyNetMsg)>,
     ) -> Qsendresult<SocketAddr> {
         let addr = self.stream.peer_addr().unwrap();
         self.clients
@@ -99,10 +106,19 @@ impl MyNetMsgClientContext {
             self.clients.read().unwrap().len()
         );
 
+        let status_msg = self
+            .msg_builder
+            .new_text(format!(
+                "-- Client connected, number of clients: {}",
+                self.clients.read().unwrap().len()
+            ))
+            .unwrap();
+        send_msg.send((Some(addr), status_msg)).unwrap();
+
         loop {
             let msg = read_message(&mut &self.stream);
             match msg {
-                Ok(message) => {
+                Ok(mut message) => {
                     if message.text.trim() == ".quit" {
                         println!("-- {} disconnected", message.sender_name);
                         self.clients.write().unwrap().remove(&addr);
@@ -112,7 +128,28 @@ impl MyNetMsgClientContext {
                         break;
                     } else {
                         message.display();
-                        send_msg.send((addr, message)).unwrap();
+                        let convres = message.convert_to_png();
+                        if convres.is_err() {
+                            eprintln!(
+                                "Conversion to png failed with error: {}",
+                                convres.unwrap_err()
+                            );
+
+                            let errmsg = self
+                                .msg_builder
+                                .new_text(
+                                    "Image has unsupported format or file is corrupted".into(),
+                                )
+                                .unwrap();
+
+                            for (_, stream) in self.clients.read().unwrap().iter() {
+                                send_message(&stream, errmsg.clone()).unwrap_or_else(|error| {
+                                    eprintln!("Sending error message failed with error: {error}");
+                                });
+                            }
+                        } else {
+                            send_msg.send((Some(addr), message)).unwrap();
+                        }
                     }
                 }
                 Err(error) => {
@@ -127,11 +164,11 @@ impl MyNetMsgClientContext {
         return Ok(addr);
     }
 
-    fn send_quit_ping(&self, send_msg: Sender<(SocketAddr, MyNetMsg)>) {
+    fn send_quit_ping(&self, send_msg: Sender<(Option<SocketAddr>, MyNetMsg)>) {
         TcpStream::connect(format!("127.0.0.1:{}", self.port)).unwrap();
         send_msg
             .send((
-                SocketAddr::from_str(&format!("127.0.0.1:{}", self.port)).unwrap(),
+                Some(SocketAddr::from_str(&format!("127.0.0.1:{}", self.port)).unwrap()),
                 MyNetMsg::quit_msq(String::from(".quit")),
             ))
             .unwrap();

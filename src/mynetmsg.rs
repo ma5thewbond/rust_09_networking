@@ -1,10 +1,10 @@
-//use image::io::Reader as ImageReader;
+use crate::Qresult;
+use image::io::Reader as ImageReader;
 use serde_derive::{Deserialize, Serialize};
-use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -31,7 +31,7 @@ impl MyNetMsg {
         return msg;
     }
 
-    pub fn new_text(&self, content: String) -> Result<MyNetMsg, Box<dyn Error>> {
+    pub fn new_text(&self, content: String) -> Qresult<MyNetMsg> {
         let msg = Self {
             msg_type: MyMsgType::Text,
             text: content,
@@ -43,7 +43,7 @@ impl MyNetMsg {
         return Ok(msg);
     }
 
-    pub fn new_file(&self, path: String) -> Result<MyNetMsg, Box<dyn Error>> {
+    pub fn new_file(&self, path: String) -> Qresult<MyNetMsg> {
         let msg = Self {
             msg_type: MyMsgType::File,
             text: String::new(),
@@ -55,7 +55,7 @@ impl MyNetMsg {
         return Ok(msg);
     }
 
-    pub fn new_image(&self, path: String) -> Result<MyNetMsg, Box<dyn Error>> {
+    pub fn new_image(&self, path: String) -> Qresult<MyNetMsg> {
         let msg = Self {
             msg_type: MyMsgType::Image,
             text: String::new(),
@@ -79,20 +79,14 @@ impl MyNetMsg {
         return msg;
     }
 
-    pub fn store_file(&self, path: &Path) -> Result<(), Box<dyn Error>> {
+    pub fn store_file(&self, path: &Path) -> Qresult<()> {
         if !Path::new("images").exists() {
             fs::create_dir("images")?;
         }
         if !Path::new("files").exists() {
             fs::create_dir("files")?;
         }
-        // if Path::new(&self.file_name)
-        //     .extension()
-        //     .and_then(OsStr::to_str)
-        //     != Some("jpg")
-        // {
-        //     self.convert_to_png()?;
-        // }
+
         let mut f = OpenOptions::new()
             .create(true)
             .write(true)
@@ -121,7 +115,7 @@ impl MyNetMsg {
         return path.file_name().unwrap().to_str().unwrap().to_string();
     }
 
-    fn get_file_data(path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    fn get_file_data(path: &str) -> Qresult<Vec<u8>> {
         let path = Path::new(path.trim());
         let mut f = File::open(path)?;
         let metadata = fs::metadata(path)?;
@@ -131,16 +125,29 @@ impl MyNetMsg {
         return Ok(buffer);
     }
 
-    // fn convert_to_png(&self) -> Result<(), Box<dyn Error>> {
-    //     // let img = ImageReader::new(Cursor::new(&self.file))
-    //     //     .with_guessed_format()?
-    //     //     .decode()?;
-    //     // img.write_to(&mut Cursor::new(&self.file), image::ImageFormat::Png)?;
-    //     return Ok(());
-    // }
+    pub fn convert_to_png(&mut self) -> Qresult<()> {
+        if self.msg_type != MyMsgType::Image {
+            return Ok(());
+        }
+
+        if self.file_name.ends_with(".png") {
+            return Ok(());
+        }
+
+        println!("Converting image {} to png format", self.file_name);
+
+        let img = ImageReader::new(Cursor::new(&self.file))
+            .with_guessed_format()?
+            .decode()?;
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
+        self.file = bytes;
+        self.file_name += ".png";
+        return Ok(());
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum MyMsgType {
     Text,
     File,
